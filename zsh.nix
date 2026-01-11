@@ -37,7 +37,4 @@
       unset AS
     '';
   };
-
-  # We avoid overriding .zshenv to prevent conflicts with the zsh module.
-  # The initContent above ensures correct session vars and zsh initialization.
 }
