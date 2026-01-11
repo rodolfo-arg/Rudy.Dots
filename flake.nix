@@ -18,7 +18,7 @@
     };
   };
 
-  outputs = { nixpkgs, nixpkgs-unstable, home-manager, ... }:
+  outputs = { nixpkgs-unstable, home-manager, ... }:
     let
       supportedSystems = [ "aarch64-darwin" ];
 
@@ -31,11 +31,6 @@
 
       mkHomeConfiguration = system: { username ? "rodolfo", homeDirectory ? "/Users/rodolfo" }:
         let
-          pkgs = import nixpkgs {
-            inherit system;
-            config.allowUnfree = true;
-          };
-
           unstablePkgs = import nixpkgs-unstable {
             inherit system;
             config.allowUnfree = true;
@@ -45,18 +40,13 @@
           ndkVersion = "28.1.13356709";
         in
         home-manager.lib.homeManagerConfiguration {
-          inherit pkgs;
-
-          extraSpecialArgs = {
-            inherit unstablePkgs;
-          };
+          inherit unstablePkgs;
 
           modules = commonModules ++ [{
             home.username = username;
             home.homeDirectory = homeDirectory;
             home.stateVersion = "24.11";
-            home.packages = with pkgs; [
-              zsh
+            home.packages = with unstablePkgs; [
               zoxide
               atuin
               jq
