@@ -95,7 +95,6 @@
             programs.gh.enable = true;
             programs.home-manager.enable = true;
             programs.nixpkgs.config.allowUnfree = true;
-            programs.adb.enable = true;
           }];
         };
     in
