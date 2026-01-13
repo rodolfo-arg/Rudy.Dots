@@ -66,6 +66,7 @@
               unzip
               bat
               lazygit
+              fd
             ] ++ [ unstablePkgs.nixd ];
 
             home.sessionVariables = {

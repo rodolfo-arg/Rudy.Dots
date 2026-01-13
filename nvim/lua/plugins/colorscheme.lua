@@ -120,7 +120,7 @@ return {
             types = {},
           },
           plugins = {
-            bufferline = true,
+            bufferline = false,
             cmp = true,
             dashboard = true,
             gitsigns = true,

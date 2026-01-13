@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+flake_target="${1:-rudy}"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+flake_dir="$(cd "${script_dir}/.." && pwd)"
+
+config_root="${XDG_CONFIG_HOME:-$HOME/.config}"
+data_root="${XDG_DATA_HOME:-$HOME/.local/share}"
+state_root="${XDG_STATE_HOME:-$HOME/.local/state}"
+cache_root="${XDG_CACHE_HOME:-$HOME/.cache}"
+nvim_config="${config_root}/nvim"
+nvim_data="${data_root}/nvim"
+nvim_state="${state_root}/nvim"
+nvim_cache="${cache_root}/nvim"
+
+if [ -e "${nvim_config}" ] || [ -L "${nvim_config}" ]; then
+  echo "[nvim] Removing existing config at ${nvim_config}"
+  rm -rf "${nvim_config}"
+else
+  echo "[nvim] No existing config at ${nvim_config}"
+fi
+
+for path in "${nvim_data}" "${nvim_state}" "${nvim_cache}"; do
+  if [ -e "${path}" ] || [ -L "${path}" ]; then
+    echo "[nvim] Removing data at ${path}"
+    rm -rf "${path}"
+  else
+    echo "[nvim] No data at ${path}"
+  fi
+done
+
+echo "[home-manager] Switching flake ${flake_dir}#${flake_target}"
+home-manager switch --flake "${flake_dir}#${flake_target}"
