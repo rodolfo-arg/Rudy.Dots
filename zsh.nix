@@ -2,7 +2,7 @@
 {
   programs.zsh = {
     # Enable completions
-    enableCompletion = false;
+    enableCompletion = true;
 
     # zplug handled manually in initContent to avoid deprecation warnings
     zplug.enable = false;
