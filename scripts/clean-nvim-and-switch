@@ -32,3 +32,13 @@ done
 
 echo "[home-manager] Switching flake ${flake_dir}#${flake_target}"
 home-manager switch --flake "${flake_dir}#${flake_target}"
+
+if [ -x "${HOME}/.asdf/bin/asdf" ]; then
+  echo "[asdf] Reshimming shims using ${HOME}/.asdf/bin/asdf"
+  "${HOME}/.asdf/bin/asdf" reshim
+elif command -v asdf >/dev/null 2>&1; then
+  echo "[asdf] Reshimming shims using $(command -v asdf)"
+  asdf reshim
+else
+  echo "[asdf] asdf not found; skipping reshim"
+fi

@@ -74,6 +74,8 @@
               ANDROID_HOME = androidHome;
               ANDROID_NDK_HOME = "${androidHome}/ndk/${ndkVersion}";
               ANDROID_SDK_ROOT = androidHome;
+              ASDF_DIR = "${homeDirectory}/.asdf";
+              ASDF_DATA_DIR = "${homeDirectory}/.asdf";
               CC = "/usr/bin/clang";
               CXX = "/usr/bin/clang++";
             };
@@ -103,4 +105,3 @@
       };
     };
 }
-

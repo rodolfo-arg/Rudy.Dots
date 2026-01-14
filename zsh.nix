@@ -27,6 +27,11 @@
         done
       fi
 
+      # Initialize asdf if installed (prefer ~/.asdf)
+      if [ -f "''${ASDF_DIR:-$HOME/.asdf}/asdf.sh" ]; then
+        . "''${ASDF_DIR:-$HOME/.asdf}/asdf.sh"
+      fi
+
       # Unset c/c++ related dependencies to avoid using nix's.
       unset CC
       unset CXX
