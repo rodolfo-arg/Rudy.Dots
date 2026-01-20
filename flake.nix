@@ -86,6 +86,7 @@
               "$HOME/.pub-cache/bin"
               "/opt/homebrew/bin"
               "/opt/homebrew/sbin"
+              "/opt/homebrew/opt/python@3.14/libexec/bin"
               "${androidHome}/cmdline-tools/latest/bin"
               "${androidHome}/platform-tools"
             ];

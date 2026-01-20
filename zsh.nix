@@ -12,7 +12,6 @@
       # Init Dependencies
       eval "$(zoxide init zsh)"
       eval "$(atuin init zsh)"
-      eval "$(starship init zsh)"
 
       # Extend homebrew
        if command -v brew >/dev/null 2>&1; then
@@ -31,6 +30,9 @@
       if [ -f "''${ASDF_DIR:-$HOME/.asdf}/asdf.sh" ]; then
         . "''${ASDF_DIR:-$HOME/.asdf}/asdf.sh"
       fi
+
+      [ -f "$HOME/sdk/google-cloud-sdk/path.zsh.inc" ] && source "$HOME/sdk/google-cloud-sdk/path.zsh.inc"
+      [ -f "$HOME/sdk/google-cloud-sdk/completion.zsh.inc" ] && source "$HOME/sdk/google-cloud-sdk/completion.zsh.inc"
 
       # Unset c/c++ related dependencies to avoid using nix's.
       unset CC
