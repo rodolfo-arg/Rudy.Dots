@@ -30,8 +30,8 @@ for path in "${nvim_data}" "${nvim_state}" "${nvim_cache}"; do
   fi
 done
 
-echo "[home-manager] Switching flake ${flake_dir}#${flake_target}"
-home-manager switch --flake "${flake_dir}#${flake_target}"
+echo "[home-manager] Switching flake ${flake_dir}#${flake_target} (impure)"
+home-manager switch --flake "${flake_dir}#${flake_target}" --impure
 
 if [ -x "${HOME}/.asdf/bin/asdf" ]; then
   echo "[asdf] Reshimming shims using ${HOME}/.asdf/bin/asdf"

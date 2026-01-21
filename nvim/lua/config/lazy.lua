@@ -48,7 +48,6 @@ require("lazy").setup({
     { import = "lazyvim.plugins.extras.lang.angular" },
     { import = "lazyvim.plugins.extras.lang.astro" },
     { import = "lazyvim.plugins.extras.lang.go" },
-    { import = "lazyvim.plugins.extras.lang.nix" },
     { import = "lazyvim.plugins.extras.lang.toml" },
     { import = "lazyvim.plugins.extras.lang.yaml" },
 
