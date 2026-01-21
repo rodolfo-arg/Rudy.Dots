@@ -1,0 +1,376 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+project_root="${1:-$PWD}"
+module="${2:-app}"
+
+if [ ! -d "$project_root" ]; then
+  echo "Project root not found: $project_root" >&2
+  exit 1
+fi
+
+project_root="$(cd "$project_root" && pwd)"
+
+gradle_cmd=""
+if [ -x "$project_root/gradlew" ]; then
+  gradle_cmd="$project_root/gradlew"
+elif command -v gradle >/dev/null 2>&1; then
+  gradle_cmd="gradle"
+else
+  echo "gradle/gradlew not found for $project_root" >&2
+  exit 1
+fi
+
+tmp_init="$(mktemp -t kls-init.XXXXXX)"
+tmp_json=""
+trap 'rm -f "$tmp_init" "$tmp_json"' EXIT
+
+cat >"$tmp_init" <<'EOF'
+allprojects { prj ->
+  prj.tasks.register("klsClasspath") {
+    doLast {
+      def out = [:]
+      prj.configurations.each { cfg ->
+        def name = cfg.name
+        if (!(name.endsWith("CompileClasspath") || name.endsWith("RuntimeClasspath"))) {
+          return
+        }
+        if (!cfg.canBeResolved) {
+          return
+        }
+        try {
+          out[name] = cfg.resolve().collect { it.absolutePath }
+        } catch (Exception ignored) {
+        }
+      }
+      println("KLS_JSON_BEGIN")
+      println(groovy.json.JsonOutput.toJson(out))
+      println("KLS_JSON_END")
+    }
+  }
+}
+EOF
+
+gradle_output="$("$gradle_cmd" -p "$project_root" -I "$tmp_init" --console=plain ":${module}:klsClasspath" 2>&1 || true)"
+json_payload="$(printf "%s\n" "$gradle_output" | python3 -c '
+import re
+import sys
+
+text = sys.stdin.read().replace("\r", "\n")
+text = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", text)
+start = text.find("KLS_JSON_BEGIN")
+end = text.find("KLS_JSON_END")
+if start == -1 or end == -1 or end <= start:
+    sys.exit(1)
+payload = text[start + len("KLS_JSON_BEGIN"):end].strip()
+sys.stdout.write(payload)
+' || true)"
+json_payload_trim="$(printf "%s" "$json_payload" | tr -d ' \n\r\t')"
+
+if [ "${KLS_DEBUG:-0}" = "1" ]; then
+  echo "---- Payload preview ----" >&2
+  printf "%s" "$json_payload" | python3 -c 'import sys; data=sys.stdin.read(); print("payload_len=", len(data)); print("payload_repr=", repr(data[:200]))'
+fi
+
+if [ -z "$json_payload_trim" ]; then
+  echo "Failed to extract classpath JSON from Gradle output." >&2
+  exit 1
+fi
+
+tmp_json="$(mktemp -t kls-json.XXXXXX)"
+printf "%s" "$json_payload" > "$tmp_json"
+
+python3 -c '
+import hashlib
+import json
+import os
+import sys
+import zipfile
+
+project_root = sys.argv[1]
+module = sys.argv[2]
+json_path = sys.argv[3]
+raw = open(json_path, "r", encoding="utf-8").read()
+raw = raw.strip()
+if not raw:
+    raise SystemExit("No JSON payload found between KLS_JSON_BEGIN/KLS_JSON_END")
+
+def try_parse(payload: str):
+    try:
+        return json.loads(payload)
+    except json.JSONDecodeError:
+        return None
+
+data = try_parse(raw)
+if data is None:
+    start = raw.find("{")
+    end = raw.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        data = try_parse(raw[start:end + 1])
+    if data is None:
+        raise SystemExit("Failed to parse JSON payload:\n" + raw[:4000])
+
+def norm_path(path: str) -> str:
+    home = os.path.expanduser("~")
+    if path.startswith(project_root + os.sep):
+        rel = os.path.relpath(path, project_root)
+        return "<WORKSPACE>/" + rel.replace(os.sep, "/")
+    if path.startswith(home + os.sep):
+        rel = os.path.relpath(path, home)
+        return "<HOME>/" + rel.replace(os.sep, "/")
+    return path
+
+def module_dir_from_name(name: str) -> str:
+    clean = name.lstrip(":").replace(":", "/")
+    if not clean:
+        return project_root
+    return os.path.join(project_root, clean)
+
+def detect_source_roots(module_dir: str):
+    roots = []
+    candidates = [
+        ("src/main/java", "java-source"),
+        ("src/main/kotlin", "kotlin-source"),
+        ("src/main/resources", "resources"),
+        ("src/androidTest/java", "java-test"),
+        ("src/androidTest/kotlin", "kotlin-test"),
+        ("src/androidTest/resources", "test-resources"),
+        ("src/test/java", "java-test"),
+        ("src/test/kotlin", "kotlin-test"),
+        ("src/test/resources", "test-resources"),
+    ]
+    for rel, typ in candidates:
+        path = os.path.join(module_dir, rel)
+        if os.path.isdir(path):
+            roots.append({
+                "path": norm_path(path),
+                "type": typ,
+            })
+    return roots
+
+def best_android_jar():
+    sdk_root = os.environ.get("ANDROID_SDK_ROOT") or os.environ.get("ANDROID_HOME")
+    if not sdk_root:
+        return None
+    platforms = os.path.join(sdk_root, "platforms")
+    if not os.path.isdir(platforms):
+        return None
+    best = None
+    best_api = -1
+    for name in os.listdir(platforms):
+        if not name.startswith("android-"):
+            continue
+        try:
+            api = int(name.split("-")[1])
+        except Exception:
+            continue
+        jar = os.path.join(platforms, name, "android.jar")
+        if os.path.isfile(jar) and api > best_api:
+            best_api = api
+            best = jar
+    return best
+
+def find_sources_for_artifact(path: str):
+    if not (path.endswith(".jar") or path.endswith(".aar")):
+        return None
+    base = os.path.basename(path)
+    base_no_ext = base.rsplit(".", 1)[0]
+    dirpath = os.path.dirname(path)
+    direct = os.path.join(dirpath, base_no_ext + "-sources.jar")
+    if os.path.isfile(direct):
+        return direct
+    try:
+        for entry in os.listdir(dirpath):
+            if entry.endswith("-sources.jar") and entry.startswith(base_no_ext):
+                return os.path.join(dirpath, entry)
+    except Exception:
+        return None
+    # Gradle caches store sources in a sibling hash directory.
+    normalized = path.replace(os.sep, "/")
+    if "/caches/modules-2/files-2.1/" not in normalized:
+        return None
+    version_dir = os.path.dirname(dirpath)
+    if not os.path.isdir(version_dir):
+        return None
+    try:
+        for entry in os.listdir(version_dir):
+            hash_dir = os.path.join(version_dir, entry)
+            if not os.path.isdir(hash_dir):
+                continue
+            direct = os.path.join(hash_dir, base_no_ext + "-sources.jar")
+            if os.path.isfile(direct):
+                return direct
+            for candidate in os.listdir(hash_dir):
+                if candidate.endswith("-sources.jar") and candidate.startswith(base_no_ext):
+                    return os.path.join(hash_dir, candidate)
+    except Exception:
+        return None
+    return None
+
+def extract_aar_classes(aar_path: str):
+    try:
+        with zipfile.ZipFile(aar_path) as zf:
+            if "classes.jar" not in zf.namelist():
+                return None
+            cache_dir = os.path.join(os.path.expanduser("~"), ".cache", "kotlin-lsp", "aar-classes")
+            os.makedirs(cache_dir, exist_ok=True)
+            h = hashlib.sha256(aar_path.encode("utf-8")).hexdigest()[:16]
+            out_path = os.path.join(cache_dir, f"{os.path.basename(aar_path)}-{h}.jar")
+            if not os.path.isfile(out_path):
+                zf.extract("classes.jar", cache_dir)
+                os.replace(os.path.join(cache_dir, "classes.jar"), out_path)
+            return out_path
+    except Exception:
+        return None
+
+def scope_for(cfg_name: str) -> str:
+    lower = cfg_name.lower()
+    if "test" in lower:
+        return "COMPILE"
+    if "runtime" in lower:
+        return "RUNTIME"
+    return "COMPILE"
+
+paths_by_scope = {"COMPILE": set(), "TEST": set(), "RUNTIME": set()}
+for cfg, paths in data.items():
+    scope = scope_for(cfg)
+    if scope not in paths_by_scope:
+        paths_by_scope[scope] = set()
+    for p in paths:
+        if os.path.isfile(p):
+            paths_by_scope[scope].add(p)
+
+android_jar = best_android_jar()
+if android_jar:
+    paths_by_scope["COMPILE"].add(android_jar)
+
+path_to_name = {}
+libraries = []
+sources_override = {}
+
+def add_library(path: str):
+    if path in path_to_name:
+        return path_to_name[path]
+    lib_name = os.path.basename(path)
+    base = lib_name
+    i = 1
+    while lib_name in path_to_name.values():
+        lib_name = f"{base}#{i}"
+        i += 1
+    roots = []
+    roots.append({
+        "path": norm_path(path),
+        "type": "CLASSES",
+        "inclusionOptions": "ROOT_ITSELF",
+    })
+    sources = sources_override.get(path) or find_sources_for_artifact(path)
+    if sources:
+        roots.append({
+            "path": norm_path(sources),
+            "type": "SOURCES",
+            "inclusionOptions": "ROOT_ITSELF",
+        })
+    libraries.append({
+        "name": lib_name,
+        "type": None,
+        "roots": roots,
+        "excludedRoots": [],
+    })
+    path_to_name[path] = lib_name
+    return lib_name
+
+def normalize_path(path: str):
+    if path.endswith(".aar"):
+        sources = find_sources_for_artifact(path)
+        extracted = extract_aar_classes(path)
+        if extracted:
+            if sources:
+                sources_override[extracted] = sources
+            return extracted
+    return path
+
+dependencies = [{"type": "moduleSource", "value": {}}]
+for scope in ("COMPILE", "TEST", "RUNTIME"):
+    for p in sorted(paths_by_scope.get(scope, [])):
+        norm = normalize_path(p)
+        lib_name = add_library(norm)
+        dependencies.append({
+            "type": "library",
+            "value": {
+                "name": lib_name,
+                "scope": scope,
+                "isExported": False,
+            },
+        })
+
+module_dir = module_dir_from_name(module)
+content_root_path = module_dir if os.path.isdir(module_dir) else project_root
+content_roots = [{
+    "path": norm_path(content_root_path),
+    "sourceRoots": detect_source_roots(module_dir),
+}]
+
+source_root_paths = [r["path"] for r in content_roots[0]["sourceRoots"]]
+source_set_names = []
+for p in source_root_paths:
+    if "/src/main/" in p and "main" not in source_set_names:
+        source_set_names.append("main")
+    if "/src/test/" in p and "test" not in source_set_names:
+        source_set_names.append("test")
+    if "/src/androidTest/" in p and "androidTest" not in source_set_names:
+        source_set_names.append("androidTest")
+
+kotlin_settings = [{
+    "name": module.lstrip(":"),
+    "sourceRoots": source_root_paths,
+    "configFileItems": [],
+    "module": module.lstrip(":"),
+    "useProjectSettings": True,
+    "implementedModuleNames": [],
+    "dependsOnModuleNames": [],
+    "additionalVisibleModuleNames": [],
+    "productionOutputPath": None,
+    "testOutputPath": None,
+    "sourceSetNames": source_set_names,
+    "isTestModule": False,
+    "externalProjectId": module.lstrip(":"),
+    "isHmppEnabled": False,
+    "pureKotlinSourceFolders": [],
+    "kind": "DEFAULT",
+    "compilerArguments": None,
+    "additionalArguments": None,
+    "scriptTemplates": None,
+    "scriptTemplatesClasspath": None,
+    "copyJsLibraryFiles": False,
+    "outputDirectoryForJsLibraryFiles": None,
+    "targetPlatform": None,
+    "externalSystemRunTasks": [],
+    "version": 1,
+    "flushNeeded": False,
+}]
+
+workspace = {
+    "modules": [
+        {
+            "name": module.lstrip(":"),
+            "type": "JAVA_MODULE",
+            "dependencies": dependencies,
+            "contentRoots": content_roots,
+            "facets": [],
+        }
+    ],
+    "libraries": libraries,
+    "sdks": [],
+    "kotlinSettings": kotlin_settings,
+}
+
+out_paths = [
+    os.path.join(project_root, "kotlin-lsp-config.json"),
+    os.path.join(project_root, "workspace.json"),
+]
+for out_path in out_paths:
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(workspace, f, indent=2)
+
+print("Wrote " + ", ".join(out_paths))
+' "$project_root" "$module" "$tmp_json"

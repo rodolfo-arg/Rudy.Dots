@@ -55,19 +55,39 @@
             home.username = username;
             home.homeDirectory = homeDirectory;
             home.stateVersion = "24.11";
-            home.packages = with pkgs; [
-              zoxide
-              atuin
-              jq
-              starship
-              nixpkgs-fmt
-              ripgrep
-              coreutils
-              unzip
-              bat
-              lazygit
-              fd
-            ] ++ [ unstablePkgs.nixd ];
+            home.packages =
+              let
+                jdkPkg =
+                  if builtins.hasAttr "jdk17" pkgs then
+                    pkgs.jdk17
+                  else if builtins.hasAttr "jdk" pkgs then
+                    pkgs.jdk
+                  else
+                    null;
+              in
+              (with pkgs; [
+                zoxide
+                atuin
+                jq
+                starship
+                nixpkgs-fmt
+                ripgrep
+                coreutils
+                unzip
+                bat
+                lazygit
+                fd
+                gradle
+                kotlin
+              ])
+              ++ pkgs.lib.optional (jdkPkg != null) jdkPkg
+              ++ [ unstablePkgs.nixd ]
+              ++ (if builtins.hasAttr "kotlin-language-server" pkgs then
+                [ pkgs."kotlin-language-server" ]
+              else if builtins.hasAttr "kotlin-language-server" unstablePkgs then
+                [ unstablePkgs."kotlin-language-server" ]
+              else
+                [ ]);
 
             home.sessionVariables = {
               # Set environment variables
