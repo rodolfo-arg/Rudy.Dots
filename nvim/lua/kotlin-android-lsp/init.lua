@@ -56,6 +56,34 @@ function M.setup(opts)
     desc = "Clear the dependency index cache",
   })
 
+  vim.api.nvim_create_user_command("KotlinIndexSources", function()
+    vim.notify("Indexing JDK and Android SDK sources...", vim.log.levels.INFO)
+    local jdk_ok = M.indexer.index_jdk()
+    local android_ok = M.indexer.index_android_sdk()
+    vim.notify(string.format("Indexing complete. JDK: %s, Android SDK: %s",
+      jdk_ok and "OK" or "NOT FOUND",
+      android_ok and "OK" or "NOT FOUND"
+    ), vim.log.levels.INFO)
+  end, {
+    desc = "Index JDK and Android SDK sources",
+  })
+
+  vim.api.nvim_create_user_command("KotlinLookup", function(cmd_opts)
+    local fqn = cmd_opts.args
+    if fqn == "" then
+      fqn = vim.fn.expand("<cword>")
+    end
+    local result = M.indexer.lookup(fqn)
+    if result then
+      vim.notify("Found: " .. fqn .. "\n-> " .. result, vim.log.levels.INFO)
+    else
+      vim.notify("Not found: " .. fqn, vim.log.levels.WARN)
+    end
+  end, {
+    nargs = "?",
+    desc = "Lookup a fully qualified name in the index",
+  })
+
   -- Register keymaps if enabled
   if M.config.options.keymaps.enabled then
     local km = M.config.options.keymaps
