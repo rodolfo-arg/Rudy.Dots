@@ -32,6 +32,8 @@ end
 
 -- Flag to track if common sources have been indexed
 local common_sources_indexed = false
+-- Flag to track if project has been initialized
+local project_initialized = false
 
 ---Handle a zipfile:// buffer - disable LSP, enable custom navigation
 ---@param bufnr number
@@ -64,6 +66,62 @@ local function handle_zipfile_buffer(bufnr, filetype)
   end
 end
 
+---Check if current directory is a gradle/android project
+---@return boolean
+local function is_gradle_project()
+  local markers = { "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts" }
+  for _, marker in ipairs(markers) do
+    if vim.fn.filereadable(vim.fn.getcwd() .. "/" .. marker) == 1 then
+      return true
+    end
+  end
+  return false
+end
+
+---Initialize project: generate workspace and index sources
+local function initialize_project()
+  if project_initialized then
+    return
+  end
+  project_initialized = true
+
+  -- Only initialize for gradle projects
+  if not is_gradle_project() then
+    return
+  end
+
+  local cwd = vim.fn.getcwd()
+  local workspace_file = cwd .. "/workspace.json"
+
+  -- Show loading notification
+  vim.notify("Kotlin Android LSP: Initializing project...", vim.log.levels.INFO)
+
+  -- Generate workspace.json if it doesn't exist
+  if vim.fn.filereadable(workspace_file) ~= 1 then
+    vim.notify("Generating workspace.json...", vim.log.levels.INFO)
+    local workspace = require("kotlin-android-lsp.workspace")
+    local config = require("kotlin-android-lsp.config")
+    workspace.generate(cwd, config.options.default_module)
+  end
+
+  -- Index sources in background
+  vim.defer_fn(function()
+    vim.notify("Indexing sources (JDK, Android SDK, Gradle)...", vim.log.levels.INFO)
+
+    -- Index in chunks to not block UI
+    vim.schedule(function()
+      indexer.index_jdk()
+      vim.schedule(function()
+        indexer.index_android_sdk()
+        vim.schedule(function()
+          local count = indexer.index_gradle_sources()
+          vim.notify(string.format("Indexing complete: %d source jars indexed", count), vim.log.levels.INFO)
+        end)
+      end)
+    end)
+  end, 100)
+end
+
 ---Handle attachment for a buffer based on filetype
 ---@param bufnr number Buffer number
 ---@param filetype string File type
@@ -74,6 +132,11 @@ local function handle_attachment(bufnr, filetype)
   if uri.is_zipfile(bufname) then
     handle_zipfile_buffer(bufnr, filetype)
     return
+  end
+
+  -- For Kotlin files in gradle projects, initialize project on first open
+  if filetype == "kotlin" and not project_initialized then
+    initialize_project()
   end
 
   -- For regular project files, let LSP handle normally
