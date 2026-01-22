@@ -246,6 +246,89 @@ function M.get_fqn_index()
   return fqn_index
 end
 
+---Index JDK src.zip
+function M.index_jdk()
+  -- Find JDK src.zip
+  local jdk_sources = {
+    "/opt/homebrew/Cellar/openjdk@21/21.0.6/libexec/openjdk.jdk/Contents/Home/lib/src.zip",
+    "/opt/homebrew/Cellar/openjdk/21.0.6/libexec/openjdk.jdk/Contents/Home/lib/src.zip",
+    (vim.env.JAVA_HOME or "") .. "/lib/src.zip",
+  }
+
+  for _, src_zip in ipairs(jdk_sources) do
+    if vim.fn.filereadable(src_zip) == 1 then
+      M.index_jar(src_zip)
+      return true
+    end
+  end
+
+  -- Try to find dynamically
+  local handle = io.popen('find /opt/homebrew/Cellar/openjdk* -name "src.zip" -path "*/lib/*" 2>/dev/null | head -1')
+  if handle then
+    local result = handle:read("*l")
+    handle:close()
+    if result and result ~= "" and vim.fn.filereadable(result) == 1 then
+      M.index_jar(result)
+      return true
+    end
+  end
+
+  return false
+end
+
+---Index Android SDK sources (directory-based, not jar)
+function M.index_android_sdk()
+  local sdk_root = vim.env.ANDROID_HOME or vim.env.ANDROID_SDK_ROOT or (vim.env.HOME .. "/Library/Android/sdk")
+  local sources_dir = sdk_root .. "/sources"
+
+  if vim.fn.isdirectory(sources_dir) ~= 1 then
+    return false
+  end
+
+  -- Find the latest android-XX version
+  local handle = io.popen('ls -d "' .. sources_dir .. '"/android-* 2>/dev/null | sort -V | tail -1')
+  if not handle then return false end
+
+  local android_sources = handle:read("*l")
+  handle:close()
+
+  if not android_sources or android_sources == "" then
+    return false
+  end
+
+  -- Index all java files in the android sources
+  local index_handle = io.popen('find "' .. android_sources .. '" -name "*.java" 2>/dev/null')
+  if not index_handle then return false end
+
+  local count = 0
+  for file_path in index_handle:lines() do
+    -- Extract relative path from android sources root
+    local rel_path = file_path:sub(#android_sources + 2) -- +2 for trailing slash
+    local package_name, class_name = path_to_package(rel_path)
+
+    if class_name and class_name ~= "" then
+      local fqn
+      if package_name and package_name ~= "" then
+        fqn = package_name .. "." .. class_name
+      else
+        fqn = class_name
+      end
+      -- Store as file:// path for Android SDK (not zipfile)
+      fqn_index[fqn] = file_path
+      count = count + 1
+    end
+  end
+  index_handle:close()
+
+  return count > 0
+end
+
+---Index common sources (JDK, Android SDK)
+function M.index_common_sources()
+  M.index_jdk()
+  M.index_android_sdk()
+end
+
 ---Clear all caches
 function M.clear_cache()
   jar_indexes = {}

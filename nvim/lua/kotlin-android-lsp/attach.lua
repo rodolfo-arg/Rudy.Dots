@@ -30,6 +30,9 @@ local function prevent_lsp_attach(bufnr)
   end)
 end
 
+-- Flag to track if common sources have been indexed
+local common_sources_indexed = false
+
 ---Handle a zipfile:// buffer - disable LSP, enable custom navigation
 ---@param bufnr number
 ---@param filetype string
@@ -41,6 +44,15 @@ local function handle_zipfile_buffer(bufnr, filetype)
 
   -- Prevent LSP from attaching
   prevent_lsp_attach(bufnr)
+
+  -- Index common sources (JDK, Android SDK) once
+  if not common_sources_indexed then
+    common_sources_indexed = true
+    -- Run async to not block
+    vim.schedule(function()
+      indexer.index_common_sources()
+    end)
+  end
 
   -- Index the current jar
   local bufname = vim.api.nvim_buf_get_name(bufnr)

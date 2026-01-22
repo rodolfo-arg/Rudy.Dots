@@ -7,13 +7,13 @@ local indexer = require("kotlin-android-lsp.indexer")
 local resolver = require("kotlin-android-lsp.resolver")
 local uri_module = require("kotlin-android-lsp.uri")
 
----Navigate to a zipfile location
----@param zipfile_path string
-local function goto_zipfile(zipfile_path)
-  -- Use vim.cmd.edit to open the zipfile
-  local ok, err = pcall(vim.cmd.edit, zipfile_path)
+---Navigate to a file location (handles both zipfile:// and regular paths)
+---@param target_path string
+local function goto_location(target_path)
+  -- Use vim.cmd.edit to open the file
+  local ok, err = pcall(vim.cmd.edit, target_path)
   if not ok then
-    vim.notify("Failed to open: " .. zipfile_path .. "\n" .. tostring(err), vim.log.levels.ERROR)
+    vim.notify("Failed to open: " .. target_path .. "\n" .. tostring(err), vim.log.levels.ERROR)
   end
 end
 
@@ -41,7 +41,7 @@ function M.goto_definition()
   for _, fqn in ipairs(candidates) do
     local target = indexer.lookup(fqn)
     if target then
-      goto_zipfile(target)
+      goto_location(target)
       return
     end
   end
@@ -62,7 +62,7 @@ function M.goto_definition()
       for _, fqn in ipairs(candidates) do
         local target = indexer.lookup(fqn)
         if target then
-          goto_zipfile(target)
+          goto_location(target)
           return
         end
       end
