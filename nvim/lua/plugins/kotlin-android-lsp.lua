@@ -95,9 +95,18 @@ return {
       local jdtls_bin = vim.fn.exepath("jdtls")
       if jdtls_bin ~= "" then
         -- Custom root_dir that handles zipfile:// buffers
-        local function jdtls_root_dir(fname)
+        -- Note: In Neovim 0.11+, fname can be a buffer number or string
+        local function jdtls_root_dir(fname_or_bufnr)
+          -- Handle buffer number argument (Neovim 0.11+)
+          local fname
+          if type(fname_or_bufnr) == "number" then
+            fname = vim.api.nvim_buf_get_name(fname_or_bufnr)
+          else
+            fname = fname_or_bufnr or ""
+          end
+
           -- For zipfile:// buffers, use kotlin_lsp's root or cwd
-          if fname:match("^zipfile://") then
+          if type(fname) == "string" and fname:match("^zipfile://") then
             -- Try to get root from existing kotlin_lsp client
             local kotlin_clients = vim.lsp.get_clients({ name = "kotlin_lsp" })
             if #kotlin_clients > 0 and kotlin_clients[1].config.root_dir then
