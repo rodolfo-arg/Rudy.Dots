@@ -20,6 +20,16 @@ return {
     end,
   },
 
+  -- nvim-jdtls for sophisticated Java LSP support
+  -- Handles jdtls startup via ftplugin/java.lua
+  {
+    "mfussenegger/nvim-jdtls",
+    ft = "java",
+    dependencies = {
+      "neovim/nvim-lspconfig",
+    },
+  },
+
   -- Treesitter for Kotlin and Java
   {
     "nvim-treesitter/nvim-treesitter",
@@ -90,70 +100,9 @@ return {
         },
       }
 
-      -- Configure jdtls for Java files
-      -- Note: Full jdtls setup may require nvim-jdtls plugin for best experience
-      local jdtls_bin = vim.fn.exepath("jdtls")
-      if jdtls_bin ~= "" then
-        -- Custom root_dir that handles zipfile:// buffers
-        -- Note: In Neovim 0.11+, fname can be a buffer number or string
-        local function jdtls_root_dir(fname_or_bufnr)
-          -- Handle buffer number argument (Neovim 0.11+)
-          local fname
-          if type(fname_or_bufnr) == "number" then
-            fname = vim.api.nvim_buf_get_name(fname_or_bufnr)
-          else
-            fname = fname_or_bufnr or ""
-          end
-
-          -- For zipfile:// buffers, use kotlin_lsp's root or cwd
-          if type(fname) == "string" and fname:match("^zipfile://") then
-            -- Try to get root from existing kotlin_lsp client
-            local kotlin_clients = vim.lsp.get_clients({ name = "kotlin_lsp" })
-            if #kotlin_clients > 0 and kotlin_clients[1].config.root_dir then
-              return kotlin_clients[1].config.root_dir
-            end
-            -- Fallback to cwd
-            return vim.fn.getcwd()
-          end
-
-          -- Normal root detection for regular files
-          local root_markers = {
-            "settings.gradle",
-            "settings.gradle.kts",
-            "build.gradle",
-            "build.gradle.kts",
-            "pom.xml",
-            ".git",
-          }
-          return vim.fs.root(fname, root_markers)
-        end
-
-        opts.servers.jdtls = {
-          cmd = { jdtls_bin },
-          mason = false,
-          filetypes = { "java" },
-          root_dir = jdtls_root_dir,
-          -- Enable single file mode for files without a project
-          single_file_support = true,
-          -- jdtls-specific settings
-          settings = {
-            java = {
-              project = {
-                referencedLibraries = {},
-              },
-              inlayHints = {
-                parameterNames = { enabled = "all" },
-              },
-            },
-          },
-          -- Initialize options for better library support
-          init_options = {
-            extendedClientCapabilities = {
-              classFileContentsSupport = true,
-            },
-          },
-        }
-      end
+      -- jdtls is now managed by nvim-jdtls via ftplugin/java.lua
+      -- Disable lspconfig's jdtls to avoid conflicts
+      opts.servers.jdtls = { enabled = false }
     end,
   },
 }

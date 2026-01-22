@@ -1,5 +1,6 @@
 -- kotlin-android-lsp: LSP attachment for jar source buffers
--- Handles attaching kotlin_lsp and jdtls to zipfile:// buffers
+-- Handles attaching kotlin_lsp to zipfile:// buffers
+-- jdtls is managed by nvim-jdtls via ftplugin/java.lua
 
 local M = {}
 
@@ -47,83 +48,14 @@ local function attach_kotlin_lsp(bufnr)
   end
 end
 
----Get the project root from kotlin_lsp or fallback to cwd
----@return string
-local function get_project_root()
-  local kotlin_clients = vim.lsp.get_clients({ name = "kotlin_lsp" })
-  if #kotlin_clients > 0 and kotlin_clients[1].config.root_dir then
-    return kotlin_clients[1].config.root_dir
-  end
-  return vim.fn.getcwd()
-end
-
----Start jdtls for a zipfile buffer
----@param bufnr number Buffer number
-local function start_jdtls_for_zipfile(bufnr)
-  local jdtls_bin = vim.fn.exepath("jdtls")
-  if jdtls_bin == "" then
-    -- Try nix-profile fallback
-    local home = vim.env.HOME or vim.fn.expand("~")
-    jdtls_bin = home .. "/.nix-profile/bin/jdtls"
-    if vim.fn.executable(jdtls_bin) ~= 1 then
-      return nil
-    end
-  end
-
-  local root_dir = get_project_root()
-
-  -- Start jdtls with vim.lsp.start
-  local client_id = vim.lsp.start({
-    name = "jdtls",
-    cmd = { jdtls_bin },
-    root_dir = root_dir,
-    filetypes = { "java" },
-    single_file_support = true,
-    settings = {
-      java = {
-        project = {
-          referencedLibraries = {},
-        },
-        inlayHints = {
-          parameterNames = { enabled = "all" },
-        },
-      },
-    },
-    init_options = {
-      extendedClientCapabilities = {
-        classFileContentsSupport = true,
-      },
-    },
-  }, {
-    bufnr = bufnr,
-    reuse_client = function(client, config)
-      return client.name == "jdtls"
-    end,
-  })
-
-  return client_id
-end
-
----Attach jdtls to a zipfile buffer
+---Attach jdtls to a zipfile buffer (if already running via nvim-jdtls)
 ---@param bufnr number Buffer number
 local function attach_jdtls(bufnr)
+  -- jdtls is started by nvim-jdtls via ftplugin/java.lua
+  -- We just attach if it's already running
   local clients = vim.lsp.get_clients({ name = "jdtls" })
-  if #clients > 0 then
-    -- jdtls already running, attach it
-    for _, client in ipairs(clients) do
-      attach_with_didopen(bufnr, client, "java")
-    end
-  else
-    -- Start jdtls for this buffer
-    local client_id = start_jdtls_for_zipfile(bufnr)
-    if client_id then
-      vim.schedule(function()
-        local client = vim.lsp.get_client_by_id(client_id)
-        if client then
-          attach_with_didopen(bufnr, client, "java")
-        end
-      end)
-    end
+  for _, client in ipairs(clients) do
+    attach_with_didopen(bufnr, client, "java")
   end
 end
 
@@ -139,9 +71,14 @@ local function handle_attachment(bufnr, filetype)
   if filetype == "kotlin" then
     attach_kotlin_lsp(bufnr)
   elseif filetype == "java" then
-    -- Try both kotlin_lsp (for cross-language) and jdtls (for Java-specific)
+    -- Attach kotlin_lsp for cross-language support
     attach_kotlin_lsp(bufnr)
-    attach_jdtls(bufnr)
+    -- Defer jdtls attachment to let nvim-jdtls start it first via ftplugin
+    vim.defer_fn(function()
+      if vim.api.nvim_buf_is_valid(bufnr) then
+        attach_jdtls(bufnr)
+      end
+    end, 500)
   end
 end
 
@@ -168,7 +105,7 @@ function M.setup()
     group = group,
     pattern = "zipfile://*",
     callback = function(args)
-      -- Defer to let filetype detection happen first
+      -- Defer to let filetype detection and nvim-jdtls startup happen first
       vim.defer_fn(function()
         if vim.api.nvim_buf_is_valid(args.buf) then
           local ft = vim.bo[args.buf].filetype
@@ -176,7 +113,7 @@ function M.setup()
             handle_attachment(args.buf, ft)
           end
         end
-      end, 100)
+      end, 200)
     end,
   })
 end
