@@ -71,14 +71,14 @@ local function handle_attachment(bufnr, filetype)
   if filetype == "kotlin" then
     attach_kotlin_lsp(bufnr)
   elseif filetype == "java" then
-    -- Attach kotlin_lsp for cross-language support
-    attach_kotlin_lsp(bufnr)
-    -- Defer jdtls attachment to let nvim-jdtls start it first via ftplugin
+    -- Don't attach kotlin_lsp to Java buffers - it causes "not attached" errors
+    -- jdtls is started by nvim-jdtls via ftplugin/java.lua
+    -- Defer attachment to let nvim-jdtls start it first
     vim.defer_fn(function()
       if vim.api.nvim_buf_is_valid(bufnr) then
         attach_jdtls(bufnr)
       end
-    end, 500)
+    end, 1000) -- Wait longer for jdtls to initialize
   end
 end
 
