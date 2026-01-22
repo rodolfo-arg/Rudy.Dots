@@ -246,12 +246,38 @@ Kotlin LSP indexes Java sources for Kotlin→Java navigation but does not suppor
 navigation within library sources. To enable full multi-layer navigation, we need jdtls
 (Eclipse Java LSP) to handle Java files in jar sources.
 
-### Phase 0 — Research & Prerequisites
+### Phase 0 — Research & Prerequisites ✓
 **Goal**: Understand jdtls requirements and compatibility with our setup.
-- [ ] Review jdtls documentation for single-file/library mode support
-- [ ] Check if jdtls can attach to virtual buffers (zipfile://)
-- [ ] Identify jdtls installation method (Nix preferred, Mason fallback)
-- [ ] Determine if jdtls needs a project context or can work standalone
+- [x] Review jdtls documentation for single-file/library mode support
+- [x] Check if jdtls can attach to virtual buffers (zipfile://)
+- [x] Identify jdtls installation method (Nix preferred, Mason fallback)
+- [x] Determine if jdtls needs a project context or can work standalone
+
+**Findings**:
+1. **jdtls requires project context**: Without proper project detection (Gradle/Maven),
+   jdtls only provides syntax highlighting and JDK class assistance—not full navigation.
+   Source: [eclipse-jdtls/eclipse.jdt.ls](https://github.com/eclipse-jdtls/eclipse.jdt.ls)
+
+2. **jdtls uses jdt:// URI scheme**: For decompiled/attached sources, jdtls uses its own
+   URI scheme (`jdt://contents/...`), NOT `jar:` or `zipfile://`. This is incompatible
+   with kotlin-lsp's approach. Source: [helix-editor issue #11559](https://github.com/helix-editor/helix/issues/11559)
+
+3. **Source attachment is possible**: Via `java.project.referencedLibraries` setting with
+   explicit source mappings. jdtls will then use attached sources for navigation.
+   Source: [VS Code Java docs](https://code.visualstudio.com/docs/java/java-project)
+
+4. **nvim-jdtls is the recommended plugin**: Handles jdt:// URI content provider and
+   jdtls-specific features. Requires Java 21+.
+   Source: [mfussenegger/nvim-jdtls](https://github.com/mfussenegger/nvim-jdtls)
+
+5. **Installation options**: Nix (`jdt-language-server`), Mason, or manual download.
+
+**Revised approach**:
+- Use jdtls for Java files in the Android project (test files, build files)
+- jdtls will auto-detect Gradle project and configure classpath
+- When navigating from Java files, jdtls provides its own source navigation
+- kotlin-lsp handles Kotlin files; jdtls handles Java files (separate LSPs)
+- Cross-LSP navigation: Kotlin→Java (kotlin-lsp), Java→Java (jdtls)
 
 ### Phase 1 — jdtls Installation
 **Goal**: Make jdtls available on PATH.
