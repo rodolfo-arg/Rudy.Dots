@@ -58,12 +58,105 @@
             home.packages =
               let
                 jdkPkg =
-                  if builtins.hasAttr "jdk17" pkgs then
+                  if builtins.hasAttr "jdk21" pkgs then
+                    pkgs.jdk21
+                  else if builtins.hasAttr "jdk17" pkgs then
                     pkgs.jdk17
                   else if builtins.hasAttr "jdk" pkgs then
                     pkgs.jdk
                   else
                     null;
+                javaBin =
+                  if jdkPkg != null then
+                    "${jdkPkg}/bin/java"
+                  else
+                    "java";
+                kotlinLspPkg = pkgs.stdenvNoCC.mkDerivation {
+                  pname = "kotlin-lsp";
+                  version = "261.13587.0";
+                  src = pkgs.fetchzip {
+                    url =
+                      "https://download-cdn.jetbrains.com/kotlin-lsp/261.13587.0/kotlin-lsp-261.13587.0-mac-aarch64.zip";
+                    hash = "sha256-zwlzVt3KYN0OXKr6sI9XSijXSbTImomSTGRGa+3zCK8=";
+                    stripRoot = false;
+                  };
+                  dontConfigure = true;
+                  dontBuild = true;
+                  installPhase = ''
+                    runHook preInstall
+                    mkdir -p $out/lib/kotlin-lsp $out/bin
+                    cp -R . $out/lib/kotlin-lsp
+                    cat > $out/bin/kotlin-lsp <<'EOF'
+                    #!${pkgs.bash}/bin/bash
+                    set -euo pipefail
+
+                    DIR="$(cd "$(dirname "''${BASH_SOURCE[0]}")/../lib/kotlin-lsp" && pwd)"
+                    JAVA_BIN="''${JAVA_BIN:-${javaBin}}"
+
+                    exec "$JAVA_BIN" \
+                      --add-opens java.base/java.io=ALL-UNNAMED \
+                      --add-opens java.base/java.lang=ALL-UNNAMED \
+                      --add-opens java.base/java.lang.ref=ALL-UNNAMED \
+                      --add-opens java.base/java.lang.reflect=ALL-UNNAMED \
+                      --add-opens java.base/java.net=ALL-UNNAMED \
+                      --add-opens java.base/java.nio=ALL-UNNAMED \
+                      --add-opens java.base/java.nio.charset=ALL-UNNAMED \
+                      --add-opens java.base/java.text=ALL-UNNAMED \
+                      --add-opens java.base/java.time=ALL-UNNAMED \
+                      --add-opens java.base/java.util=ALL-UNNAMED \
+                      --add-opens java.base/java.util.concurrent=ALL-UNNAMED \
+                      --add-opens java.base/java.util.concurrent.atomic=ALL-UNNAMED \
+                      --add-opens java.base/java.util.concurrent.locks=ALL-UNNAMED \
+                      --add-opens java.base/jdk.internal.vm=ALL-UNNAMED \
+                      --add-opens java.base/sun.net.dns=ALL-UNNAMED \
+                      --add-opens java.base/sun.nio.ch=ALL-UNNAMED \
+                      --add-opens java.base/sun.nio.fs=ALL-UNNAMED \
+                      --add-opens java.base/sun.security.ssl=ALL-UNNAMED \
+                      --add-opens java.base/sun.security.util=ALL-UNNAMED \
+                      --add-opens java.desktop/com.apple.eawt=ALL-UNNAMED \
+                      --add-opens java.desktop/com.apple.eawt.event=ALL-UNNAMED \
+                      --add-opens java.desktop/com.apple.laf=ALL-UNNAMED \
+                      --add-opens java.desktop/com.sun.java.swing=ALL-UNNAMED \
+                      --add-opens java.desktop/com.sun.java.swing.plaf.gtk=ALL-UNNAMED \
+                      --add-opens java.desktop/java.awt=ALL-UNNAMED \
+                      --add-opens java.desktop/java.awt.dnd.peer=ALL-UNNAMED \
+                      --add-opens java.desktop/java.awt.event=ALL-UNNAMED \
+                      --add-opens java.desktop/java.awt.font=ALL-UNNAMED \
+                      --add-opens java.desktop/java.awt.image=ALL-UNNAMED \
+                      --add-opens java.desktop/java.awt.peer=ALL-UNNAMED \
+                      --add-opens java.desktop/javax.swing=ALL-UNNAMED \
+                      --add-opens java.desktop/javax.swing.plaf.basic=ALL-UNNAMED \
+                      --add-opens java.desktop/javax.swing.text=ALL-UNNAMED \
+                      --add-opens java.desktop/javax.swing.text.html=ALL-UNNAMED \
+                      --add-opens java.desktop/sun.awt=ALL-UNNAMED \
+                      --add-opens java.desktop/sun.awt.X11=ALL-UNNAMED \
+                      --add-opens java.desktop/sun.awt.datatransfer=ALL-UNNAMED \
+                      --add-opens java.desktop/sun.awt.image=ALL-UNNAMED \
+                      --add-opens java.desktop/sun.awt.windows=ALL-UNNAMED \
+                      --add-opens java.desktop/sun.font=ALL-UNNAMED \
+                      --add-opens java.desktop/sun.java2d=ALL-UNNAMED \
+                      --add-opens java.desktop/sun.lwawt=ALL-UNNAMED \
+                      --add-opens java.desktop/sun.lwawt.macosx=ALL-UNNAMED \
+                      --add-opens java.desktop/sun.swing=ALL-UNNAMED \
+                      --add-opens java.management/sun.management=ALL-UNNAMED \
+                      --add-opens jdk.attach/sun.tools.attach=ALL-UNNAMED \
+                      --add-opens jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED \
+                      --add-opens jdk.internal.jvmstat/sun.jvmstat.monitor=ALL-UNNAMED \
+                      --add-opens jdk.jdi/com.sun.tools.jdi=ALL-UNNAMED \
+                      --enable-native-access=ALL-UNNAMED \
+                      -Djdk.lang.Process.launchMechanism=FORK \
+                      -Djava.awt.headless=true \
+                      -cp "$DIR/lib/*" com.jetbrains.ls.kotlinLsp.KotlinLspServerKt "$@"
+                    EOF
+                    chmod +x $out/bin/kotlin-lsp
+                    runHook postInstall
+                  '';
+                  meta = with pkgs.lib; {
+                    description = "Kotlin Language Server (official Kotlin LSP)";
+                    homepage = "https://github.com/Kotlin/kotlin-lsp";
+                    platforms = [ "aarch64-darwin" ];
+                  };
+                };
               in
               (with pkgs; [
                 zoxide
@@ -79,15 +172,10 @@
                 fd
                 gradle
                 kotlin
+                jdt-language-server # Java LSP for multi-layer navigation
               ])
               ++ pkgs.lib.optional (jdkPkg != null) jdkPkg
-              ++ [ unstablePkgs.nixd ]
-              ++ (if builtins.hasAttr "kotlin-language-server" pkgs then
-                [ pkgs."kotlin-language-server" ]
-              else if builtins.hasAttr "kotlin-language-server" unstablePkgs then
-                [ unstablePkgs."kotlin-language-server" ]
-              else
-                [ ]);
+              ++ [ unstablePkgs.nixd kotlinLspPkg ];
 
             home.sessionVariables = {
               # Set environment variables

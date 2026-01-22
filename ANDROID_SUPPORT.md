@@ -279,11 +279,16 @@ navigation within library sources. To enable full multi-layer navigation, we nee
 - kotlin-lsp handles Kotlin files; jdtls handles Java files (separate LSPs)
 - Cross-LSP navigation: Kotlin→Java (kotlin-lsp), Java→Java (jdtls)
 
-### Phase 1 — jdtls Installation
+### Phase 1 — jdtls Installation ✓
 **Goal**: Make jdtls available on PATH.
-- [ ] Add jdtls to Nix flake or home-manager config
-- [ ] Verify jdtls binary works: `jdtls --version` or equivalent
-- [ ] Document Java version requirements (jdtls typically needs Java 17+)
+- [x] Add jdtls to Nix flake or home-manager config
+- [x] Verify jdtls binary works: `jdtls --version` or equivalent
+- [x] Document Java version requirements (jdtls typically needs Java 17+)
+
+**Implementation**:
+- Added `jdt-language-server` to flake.nix packages
+- Installed at `~/.nix-profile/bin/jdtls`
+- Requires Java 21+ (same as kotlin-lsp)
 
 ### Phase 2 — Basic jdtls Configuration
 **Goal**: Configure jdtls for normal Java project files.
