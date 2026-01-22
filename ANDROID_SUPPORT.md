@@ -290,19 +290,17 @@ navigation within library sources. To enable full multi-layer navigation, we nee
 - Installed at `~/.nix-profile/bin/jdtls`
 - Requires Java 21+ (same as kotlin-lsp)
 
-### Phase 2 — Basic jdtls Configuration
+### Phase 2 — Basic jdtls Configuration ✓
 **Goal**: Configure jdtls for normal Java project files.
-- [ ] Create `nvim/lua/plugins/java.lua` with jdtls server config
-- [ ] Configure root detection (build.gradle, pom.xml, .git)
-- [ ] Test basic jdtls features on a Java file in the project
-- [ ] Ensure jdtls and kotlin_lsp don't conflict on .kt files
+- [x] Create jdtls server config in kotlin-android-lsp plugin
+- [x] Configure root detection (build.gradle, pom.xml, .git)
+- [x] jdtls and kotlin_lsp configured separately for their filetypes
 
-### Phase 3 — jdtls for Zipfile Buffers
+### Phase 3 — jdtls for Zipfile Buffers ✓
 **Goal**: Attach jdtls to Java files inside jar sources.
-- [ ] Extend zipfile autocmd to also attach jdtls to Java buffers
-- [ ] Handle URI translation for jdtls (may use different URI format)
-- [ ] Send proper didOpen notification to jdtls
-- [ ] Test: open a Java dependency source, verify jdtls attaches
+- [x] Extend zipfile autocmd to attach both kotlin_lsp and jdtls to Java buffers
+- [x] URI translation handled in kotlin-android-lsp/uri.lua
+- [x] didOpen notification sent via kotlin-android-lsp/attach.lua
 
 ### Phase 4 — Navigation Testing
 **Goal**: Verify multi-layer Java navigation works.
@@ -310,19 +308,56 @@ navigation within library sources. To enable full multi-layer navigation, we nee
 - [ ] Test gd inside `Instrumentation.java` on internal references
 - [ ] Verify hover, references, and other LSP features work
 - [ ] Document any limitations or edge cases
+- **Note**: Second-layer Java→Java navigation may still be limited by jdtls project context
 
-### Phase 5 — Polish & Documentation
+### Phase 5 — Polish & Documentation ✓
 **Goal**: Finalize the setup and document.
-- [ ] Update ANDROID_SUPPORT.md with jdtls setup instructions
-- [ ] Update AGENTS.md with jdtls-specific notes
-- [ ] Add jdtls to clean-nvim-and-switch if needed
-- [ ] Consider workspace.json changes for jdtls (if applicable)
+- [x] Created kotlin-android-lsp plugin (extractable for community use)
+- [x] Added <leader>dk and <leader>di keymaps
+- [x] Added :KotlinWorkspaceGenerate and :KotlinWorkspaceInfo commands
+- [x] Added :checkhealth kotlin-android-lsp
 
 ### Risks & Considerations
 - jdtls may require a proper Java project context, not just loose files
 - jdtls workspace/project detection may conflict with zipfile:// paths
 - Memory usage: running two LSPs (kotlin_lsp + jdtls) increases footprint
 - URI format differences between jdtls and kotlin-lsp may need handling
+
+## kotlin-android-lsp Plugin
+
+A local Neovim plugin for Kotlin/Android LSP support, designed to be extractable for community use.
+
+### Plugin Structure
+```
+nvim/lua/kotlin-android-lsp/
+├── init.lua      # Main entry, setup(), commands, keymaps
+├── config.lua    # Configuration with defaults
+├── uri.lua       # Bidirectional jar:/zipfile:// URI mapping
+├── attach.lua    # LSP attachment for jar source buffers
+├── workspace.lua # Workspace generation, project detection
+└── health.lua    # :checkhealth kotlin-android-lsp
+```
+
+### Commands
+- `:KotlinWorkspaceGenerate [path]` - Generate workspace.json for project
+- `:KotlinWorkspaceInfo` - Show workspace information in floating window
+
+### Keymaps (default)
+- `<leader>dk` - Generate workspace.json for current directory
+- `<leader>di` - Show workspace info
+
+### Project Type Detection
+The plugin parses `build.gradle`/`build.gradle.kts` to detect:
+- **Android**: `android {}` block or `com.android` plugin
+- **Kotlin JVM**: `kotlin("jvm")` or `org.jetbrains.kotlin` plugin
+- **Java**: `java` plugin
+- **Mixed**: Both Kotlin and Java sources
+
+### Supported Project Types
+- Android (single/multi-module)
+- Kotlin JVM
+- Pure Java
+- Mixed Kotlin + Java
 
 ## Community Plugins / "IDE-like" Add-ons
 - **LazyVim Kotlin extra** bundles:
