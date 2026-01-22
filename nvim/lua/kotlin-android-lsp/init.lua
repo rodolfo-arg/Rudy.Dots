@@ -8,6 +8,9 @@ M.uri = require("kotlin-android-lsp.uri")
 M.workspace = require("kotlin-android-lsp.workspace")
 M.attach = require("kotlin-android-lsp.attach")
 M.handlers = require("kotlin-android-lsp.handlers")
+M.indexer = require("kotlin-android-lsp.indexer")
+M.resolver = require("kotlin-android-lsp.resolver")
+M.navigator = require("kotlin-android-lsp.navigator")
 
 ---Setup the plugin with user options
 ---@param opts table|nil User configuration options
@@ -32,6 +35,25 @@ function M.setup(opts)
     M.workspace.info()
   end, {
     desc = "Show Kotlin LSP workspace information",
+  })
+
+  -- Debug commands for custom navigator
+  vim.api.nvim_create_user_command("KotlinShowImports", function()
+    local imports = M.resolver.get_imports()
+    local lines = { "Imports:" }
+    for simple, fqn in pairs(imports) do
+      table.insert(lines, string.format("  %s -> %s", simple, fqn))
+    end
+    vim.notify(table.concat(lines, "\n"), vim.log.levels.INFO)
+  end, {
+    desc = "Show parsed imports for current buffer",
+  })
+
+  vim.api.nvim_create_user_command("KotlinClearCache", function()
+    M.indexer.clear_cache()
+    vim.notify("Index cache cleared", vim.log.levels.INFO)
+  end, {
+    desc = "Clear the dependency index cache",
   })
 
   -- Register keymaps if enabled

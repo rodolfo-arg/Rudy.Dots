@@ -1,61 +1,54 @@
--- kotlin-android-lsp: LSP attachment for jar source buffers
--- Handles attaching kotlin_lsp to zipfile:// buffers
--- jdtls is managed by nvim-jdtls via ftplugin/java.lua
+-- kotlin-android-lsp: Buffer attachment handler
+-- Manages LSP attachment and custom navigation for different buffer types
 
 local M = {}
 
 local uri = require("kotlin-android-lsp.uri")
+local navigator = require("kotlin-android-lsp.navigator")
+local indexer = require("kotlin-android-lsp.indexer")
 
----Attach an LSP client to a zipfile buffer with proper didOpen notification
----@param bufnr number Buffer number
----@param client table LSP client
----@param lang_id string Language ID ("kotlin" or "java")
-local function attach_with_didopen(bufnr, client, lang_id)
-  if vim.lsp.buf_is_attached(bufnr, client.id) then
-    return
+---Detach all LSP clients from a buffer
+---@param bufnr number
+local function detach_all_lsp(bufnr)
+  local clients = vim.lsp.get_clients({ bufnr = bufnr })
+  for _, client in ipairs(clients) do
+    vim.lsp.buf_detach_client(bufnr, client.id)
   end
+end
 
-  -- Attach client to buffer
-  vim.lsp.buf_attach_client(bufnr, client.id)
+---Prevent LSP from attaching to a buffer
+---@param bufnr number
+local function prevent_lsp_attach(bufnr)
+  -- Set a flag to prevent LSP attachment
+  vim.b[bufnr].kotlin_android_lsp_no_lsp = true
 
-  -- Send explicit didOpen notification with correct jar: URI
+  -- Detach any clients that may have already attached
   vim.schedule(function()
-    if not vim.api.nvim_buf_is_valid(bufnr) then
-      return
+    if vim.api.nvim_buf_is_valid(bufnr) then
+      detach_all_lsp(bufnr)
     end
-
-    local buf_uri = vim.uri_from_bufnr(bufnr)
-    local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
-    local text = table.concat(lines, "\n")
-
-    client:notify("textDocument/didOpen", {
-      textDocument = {
-        uri = buf_uri,
-        languageId = lang_id,
-        version = 0,
-        text = text,
-      },
-    })
   end)
 end
 
----Attach kotlin_lsp to a zipfile buffer
----@param bufnr number Buffer number
-local function attach_kotlin_lsp(bufnr)
-  local clients = vim.lsp.get_clients({ name = "kotlin_lsp" })
-  for _, client in ipairs(clients) do
-    attach_with_didopen(bufnr, client, "kotlin")
+---Handle a zipfile:// buffer - disable LSP, enable custom navigation
+---@param bufnr number
+---@param filetype string
+local function handle_zipfile_buffer(bufnr, filetype)
+  -- Only handle Java and Kotlin files
+  if filetype ~= "java" and filetype ~= "kotlin" then
+    return
   end
-end
 
----Attach jdtls to a zipfile buffer (if already running via nvim-jdtls)
----@param bufnr number Buffer number
-local function attach_jdtls(bufnr)
-  -- jdtls is started by nvim-jdtls via ftplugin/java.lua
-  -- We just attach if it's already running
-  local clients = vim.lsp.get_clients({ name = "jdtls" })
-  for _, client in ipairs(clients) do
-    attach_with_didopen(bufnr, client, "java")
+  -- Prevent LSP from attaching
+  prevent_lsp_attach(bufnr)
+
+  -- Index the current jar
+  local bufname = vim.api.nvim_buf_get_name(bufnr)
+  indexer.index_from_zipfile(bufname)
+
+  -- Setup custom navigator if not already done
+  if not navigator.is_setup(bufnr) then
+    navigator.setup_buffer(bufnr)
   end
 end
 
@@ -64,25 +57,18 @@ end
 ---@param filetype string File type
 local function handle_attachment(bufnr, filetype)
   local bufname = vim.api.nvim_buf_get_name(bufnr)
-  if not uri.is_zipfile(bufname) then
+
+  -- For zipfile:// buffers, use custom navigation instead of LSP
+  if uri.is_zipfile(bufname) then
+    handle_zipfile_buffer(bufnr, filetype)
     return
   end
 
-  if filetype == "kotlin" then
-    attach_kotlin_lsp(bufnr)
-  elseif filetype == "java" then
-    -- Don't attach kotlin_lsp to Java buffers - it causes "not attached" errors
-    -- jdtls is started by nvim-jdtls via ftplugin/java.lua
-    -- Defer attachment to let nvim-jdtls start it first
-    vim.defer_fn(function()
-      if vim.api.nvim_buf_is_valid(bufnr) then
-        attach_jdtls(bufnr)
-      end
-    end, 1000) -- Wait longer for jdtls to initialize
-  end
+  -- For regular project files, let LSP handle normally
+  -- (kotlin_lsp for .kt files, jdtls for .java files via ftplugin)
 end
 
----Setup autocmds for LSP attachment to zipfile buffers
+---Setup autocmds for buffer handling
 function M.setup()
   if vim.g.__kotlin_android_lsp_attach_setup then
     return
@@ -100,20 +86,37 @@ function M.setup()
     end,
   })
 
-  -- Handle BufReadPost for zipfile buffers (filetype may be set later)
+  -- Handle BufReadPost for zipfile buffers
   vim.api.nvim_create_autocmd("BufReadPost", {
     group = group,
     pattern = "zipfile://*",
     callback = function(args)
-      -- Defer to let filetype detection and nvim-jdtls startup happen first
+      -- Defer to let filetype detection happen first
       vim.defer_fn(function()
         if vim.api.nvim_buf_is_valid(args.buf) then
           local ft = vim.bo[args.buf].filetype
-          if ft == "kotlin" or ft == "java" then
-            handle_attachment(args.buf, ft)
-          end
+          handle_attachment(args.buf, ft)
         end
-      end, 200)
+      end, 50)
+    end,
+  })
+
+  -- Intercept LspAttach to prevent attachment to zipfile buffers
+  vim.api.nvim_create_autocmd("LspAttach", {
+    group = group,
+    callback = function(args)
+      local bufnr = args.buf
+      local bufname = vim.api.nvim_buf_get_name(bufnr)
+
+      -- If this is a zipfile buffer, detach the client
+      if uri.is_zipfile(bufname) or vim.b[bufnr].kotlin_android_lsp_no_lsp then
+        local client_id = args.data.client_id
+        vim.schedule(function()
+          if vim.api.nvim_buf_is_valid(bufnr) then
+            pcall(vim.lsp.buf_detach_client, bufnr, client_id)
+          end
+        end)
+      end
     end,
   })
 end
