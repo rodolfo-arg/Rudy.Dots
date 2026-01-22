@@ -94,18 +94,38 @@ return {
       -- Note: Full jdtls setup may require nvim-jdtls plugin for best experience
       local jdtls_bin = vim.fn.exepath("jdtls")
       if jdtls_bin ~= "" then
-        opts.servers.jdtls = {
-          cmd = { jdtls_bin },
-          mason = false,
-          filetypes = { "java" },
-          root_markers = {
+        -- Custom root_dir that handles zipfile:// buffers
+        local function jdtls_root_dir(fname)
+          -- For zipfile:// buffers, use kotlin_lsp's root or cwd
+          if fname:match("^zipfile://") then
+            -- Try to get root from existing kotlin_lsp client
+            local kotlin_clients = vim.lsp.get_clients({ name = "kotlin_lsp" })
+            if #kotlin_clients > 0 and kotlin_clients[1].config.root_dir then
+              return kotlin_clients[1].config.root_dir
+            end
+            -- Fallback to cwd
+            return vim.fn.getcwd()
+          end
+
+          -- Normal root detection for regular files
+          local root_markers = {
             "settings.gradle",
             "settings.gradle.kts",
             "build.gradle",
             "build.gradle.kts",
             "pom.xml",
             ".git",
-          },
+          }
+          return vim.fs.root(fname, root_markers)
+        end
+
+        opts.servers.jdtls = {
+          cmd = { jdtls_bin },
+          mason = false,
+          filetypes = { "java" },
+          root_dir = jdtls_root_dir,
+          -- Enable single file mode for files without a project
+          single_file_support = true,
           -- jdtls-specific settings
           settings = {
             java = {
@@ -115,6 +135,12 @@ return {
               inlayHints = {
                 parameterNames = { enabled = "all" },
               },
+            },
+          },
+          -- Initialize options for better library support
+          init_options = {
+            extendedClientCapabilities = {
+              classFileContentsSupport = true,
             },
           },
         }
