@@ -33,6 +33,34 @@ done
 echo "[home-manager] Switching flake ${flake_dir}#${flake_target} (impure)"
 home-manager switch --flake "${flake_dir}#${flake_target}" --impure
 
+if command -v nvim >/dev/null 2>&1; then
+  echo "[nvim] Bootstrapping plugins (Lazy sync)"
+  nvim --headless "+Lazy! sync" +qa
+  echo "[nvim] Ensuring Kotlin tree-sitter parser"
+  nvim --headless +"lua require('nvim-treesitter').install({ 'kotlin' }):wait(300000)" +qa
+else
+  echo "[nvim] nvim not found; skipping plugin bootstrap"
+fi
+
+if [ -n "${KOTLIN_LSP_PROJECT_ROOT:-}" ]; then
+  if [ ! -d "${KOTLIN_LSP_PROJECT_ROOT}" ]; then
+    echo "[kotlin-lsp] Project root not found: ${KOTLIN_LSP_PROJECT_ROOT}" >&2
+    exit 1
+  fi
+  kls_root="$(cd "${KOTLIN_LSP_PROJECT_ROOT}" && pwd)"
+  kls_module="${KOTLIN_LSP_MODULE:-app}"
+  echo "[kotlin-lsp] Generating workspace files for ${kls_root} (module: ${kls_module})"
+  "${script_dir}/kotlin-lsp-workspace-json" "${kls_root}" "${kls_module}"
+  for out in "workspace.json" "kotlin-lsp-config.json"; do
+    if [ ! -f "${kls_root}/${out}" ]; then
+      echo "[kotlin-lsp] Expected output missing: ${kls_root}/${out}" >&2
+      exit 1
+    fi
+  done
+else
+  echo "[kotlin-lsp] KOTLIN_LSP_PROJECT_ROOT not set; skipping workspace generation"
+fi
+
 if [ -x "${HOME}/.asdf/bin/asdf" ]; then
   echo "[asdf] Reshimming shims using ${HOME}/.asdf/bin/asdf"
   "${HOME}/.asdf/bin/asdf" reshim
