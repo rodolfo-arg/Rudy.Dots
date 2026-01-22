@@ -239,7 +239,61 @@ Phase 4 — Verification
 4) Ensure the last change included a `scripts/clean-nvim-and-switch`.
 5) Verify only `kotlin_lsp` is attached (`:LspInfo`).
 
-## Community Plugins / “IDE-like” Add-ons
+## Plan: jdtls for Java Navigation in Jar Sources
+
+### Problem Statement
+Kotlin LSP indexes Java sources for Kotlin→Java navigation but does not support Java→Java
+navigation within library sources. To enable full multi-layer navigation, we need jdtls
+(Eclipse Java LSP) to handle Java files in jar sources.
+
+### Phase 0 — Research & Prerequisites
+**Goal**: Understand jdtls requirements and compatibility with our setup.
+- [ ] Review jdtls documentation for single-file/library mode support
+- [ ] Check if jdtls can attach to virtual buffers (zipfile://)
+- [ ] Identify jdtls installation method (Nix preferred, Mason fallback)
+- [ ] Determine if jdtls needs a project context or can work standalone
+
+### Phase 1 — jdtls Installation
+**Goal**: Make jdtls available on PATH.
+- [ ] Add jdtls to Nix flake or home-manager config
+- [ ] Verify jdtls binary works: `jdtls --version` or equivalent
+- [ ] Document Java version requirements (jdtls typically needs Java 17+)
+
+### Phase 2 — Basic jdtls Configuration
+**Goal**: Configure jdtls for normal Java project files.
+- [ ] Create `nvim/lua/plugins/java.lua` with jdtls server config
+- [ ] Configure root detection (build.gradle, pom.xml, .git)
+- [ ] Test basic jdtls features on a Java file in the project
+- [ ] Ensure jdtls and kotlin_lsp don't conflict on .kt files
+
+### Phase 3 — jdtls for Zipfile Buffers
+**Goal**: Attach jdtls to Java files inside jar sources.
+- [ ] Extend zipfile autocmd to also attach jdtls to Java buffers
+- [ ] Handle URI translation for jdtls (may use different URI format)
+- [ ] Send proper didOpen notification to jdtls
+- [ ] Test: open a Java dependency source, verify jdtls attaches
+
+### Phase 4 — Navigation Testing
+**Goal**: Verify multi-layer Java navigation works.
+- [ ] Test gd on `android.app.Instrumentation` → opens source
+- [ ] Test gd inside `Instrumentation.java` on internal references
+- [ ] Verify hover, references, and other LSP features work
+- [ ] Document any limitations or edge cases
+
+### Phase 5 — Polish & Documentation
+**Goal**: Finalize the setup and document.
+- [ ] Update ANDROID_SUPPORT.md with jdtls setup instructions
+- [ ] Update AGENTS.md with jdtls-specific notes
+- [ ] Add jdtls to clean-nvim-and-switch if needed
+- [ ] Consider workspace.json changes for jdtls (if applicable)
+
+### Risks & Considerations
+- jdtls may require a proper Java project context, not just loose files
+- jdtls workspace/project detection may conflict with zipfile:// paths
+- Memory usage: running two LSPs (kotlin_lsp + jdtls) increases footprint
+- URI format differences between jdtls and kotlin-lsp may need handling
+
+## Community Plugins / "IDE-like" Add-ons
 - **LazyVim Kotlin extra** bundles:
   - `nvim-treesitter` (syntax highlighting),
   - `ktlint` for lint/format (via `nvim-lint`, `conform.nvim`, or `none-ls`),
