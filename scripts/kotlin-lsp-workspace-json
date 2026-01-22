@@ -148,15 +148,18 @@ def detect_source_roots(module_dir: str):
             })
     return roots
 
-def best_android_jar():
+def best_android_jar_and_sources():
+    """Returns (android.jar path, sources.jar path or None)."""
     sdk_root = os.environ.get("ANDROID_SDK_ROOT") or os.environ.get("ANDROID_HOME")
     if not sdk_root:
-        return None
+        return None, None
     platforms = os.path.join(sdk_root, "platforms")
+    sources_base = os.path.join(sdk_root, "sources")
     if not os.path.isdir(platforms):
-        return None
-    best = None
-    best_api = -1
+        return None, None
+
+    # Collect available API levels with jars and sources
+    available = []
     for name in os.listdir(platforms):
         if not name.startswith("android-"):
             continue
@@ -165,10 +168,58 @@ def best_android_jar():
         except Exception:
             continue
         jar = os.path.join(platforms, name, "android.jar")
-        if os.path.isfile(jar) and api > best_api:
-            best_api = api
-            best = jar
-    return best
+        sources_dir = os.path.join(sources_base, name) if os.path.isdir(sources_base) else None
+        if os.path.isfile(jar):
+            has_sources = sources_dir and os.path.isdir(sources_dir)
+            available.append((api, jar, sources_dir if has_sources else None))
+
+    if not available:
+        return None, None
+
+    # Prefer highest API with sources, else highest API without
+    with_sources = [(a, j, s) for a, j, s in available if s]
+    if with_sources:
+        best = max(with_sources, key=lambda x: x[0])
+    else:
+        best = max(available, key=lambda x: x[0])
+
+    api, jar, sources_dir = best
+    sources_jar = None
+    if sources_dir:
+        sources_jar = create_android_sources_jar(sources_dir, api)
+    return jar, sources_jar
+
+def create_android_sources_jar(sources_dir: str, api: int):
+    """Create a sources jar from Android SDK sources directory."""
+    cache_dir = os.path.join(os.path.expanduser("~"), ".cache", "kotlin-lsp", "android-sources")
+    os.makedirs(cache_dir, exist_ok=True)
+    out_path = os.path.join(cache_dir, f"android-{api}-sources.jar")
+
+    # Check if jar already exists and is up to date
+    if os.path.isfile(out_path):
+        jar_mtime = os.path.getmtime(out_path)
+        sources_mtime = os.path.getmtime(sources_dir)
+        if jar_mtime >= sources_mtime:
+            return out_path
+
+    # Create sources jar
+    try:
+        with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            for root, dirs, files in os.walk(sources_dir):
+                for f in files:
+                    if f.endswith(".java") or f.endswith(".kt"):
+                        full_path = os.path.join(root, f)
+                        arc_name = os.path.relpath(full_path, sources_dir)
+                        zf.write(full_path, arc_name)
+        return out_path
+    except Exception as e:
+        print(f"Warning: Failed to create Android sources jar: {e}", file=sys.stderr)
+        return None
+
+def best_android_jar():
+    """Legacy function for backwards compatibility."""
+    jar, _ = best_android_jar_and_sources()
+    return jar
 
 def find_sources_for_artifact(path: str):
     if not (path.endswith(".jar") or path.endswith(".aar")):
@@ -225,13 +276,16 @@ def extract_aar_classes(aar_path: str):
 
 def scope_for(cfg_name: str) -> str:
     lower = cfg_name.lower()
+    # Kotlin LSP uses @SerialName values: compile/test/runtime/provided
     if "test" in lower:
-        return "COMPILE"
+        return "test"
+    if "provided" in lower:
+        return "provided"
     if "runtime" in lower:
-        return "RUNTIME"
-    return "COMPILE"
+        return "runtime"
+    return "compile"
 
-paths_by_scope = {"COMPILE": set(), "TEST": set(), "RUNTIME": set()}
+paths_by_scope = {"compile": set(), "test": set(), "runtime": set(), "provided": set()}
 for cfg, paths in data.items():
     scope = scope_for(cfg)
     if scope not in paths_by_scope:
@@ -240,13 +294,16 @@ for cfg, paths in data.items():
         if os.path.isfile(p):
             paths_by_scope[scope].add(p)
 
-android_jar = best_android_jar()
-if android_jar:
-    paths_by_scope["COMPILE"].add(android_jar)
-
 path_to_name = {}
 libraries = []
 sources_override = {}
+
+# Add Android SDK jar with sources
+android_jar, android_sources = best_android_jar_and_sources()
+if android_jar:
+    paths_by_scope["compile"].add(android_jar)
+    if android_sources:
+        sources_override[android_jar] = android_sources
 
 def add_library(path: str):
     if path in path_to_name:
@@ -261,14 +318,14 @@ def add_library(path: str):
     roots.append({
         "path": norm_path(path),
         "type": "CLASSES",
-        "inclusionOptions": "ROOT_ITSELF",
+        "inclusionOptions": "root_itself",
     })
     sources = sources_override.get(path) or find_sources_for_artifact(path)
     if sources:
         roots.append({
             "path": norm_path(sources),
             "type": "SOURCES",
-            "inclusionOptions": "ROOT_ITSELF",
+            "inclusionOptions": "root_itself",
         })
     libraries.append({
         "name": lib_name,
@@ -289,18 +346,16 @@ def normalize_path(path: str):
             return extracted
     return path
 
-dependencies = [{"type": "moduleSource", "value": {}}]
-for scope in ("COMPILE", "TEST", "RUNTIME"):
+dependencies = [{"type": "moduleSource"}]
+for scope in ("compile", "test", "runtime", "provided"):
     for p in sorted(paths_by_scope.get(scope, [])):
         norm = normalize_path(p)
         lib_name = add_library(norm)
         dependencies.append({
             "type": "library",
-            "value": {
-                "name": lib_name,
-                "scope": scope,
-                "isExported": False,
-            },
+            "name": lib_name,
+            "scope": scope,
+            "isExported": False,
         })
 
 module_dir = module_dir_from_name(module)
@@ -336,7 +391,7 @@ kotlin_settings = [{
     "externalProjectId": module.lstrip(":"),
     "isHmppEnabled": False,
     "pureKotlinSourceFolders": [],
-    "kind": "DEFAULT",
+    "kind": "default",
     "compilerArguments": None,
     "additionalArguments": None,
     "scriptTemplates": None,
