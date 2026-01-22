@@ -80,33 +80,6 @@ return {
       -- Disable deprecated kotlin-language-server
       opts.servers.kotlin_language_server = { enabled = false }
 
-      -- Custom root_dir that prevents attachment to zipfile:// buffers
-      local function kotlin_lsp_root_dir(fname_or_bufnr)
-        local fname
-        if type(fname_or_bufnr) == "number" then
-          fname = vim.api.nvim_buf_get_name(fname_or_bufnr)
-        else
-          fname = fname_or_bufnr or ""
-        end
-
-        -- Return nil for zipfile:// buffers to prevent attachment
-        if type(fname) == "string" and fname:match("^zipfile://") then
-          return nil
-        end
-
-        -- Normal root detection
-        local root_markers = {
-          "workspace.json",
-          "settings.gradle",
-          "settings.gradle.kts",
-          "build.gradle",
-          "build.gradle.kts",
-          "pom.xml",
-          ".git",
-        }
-        return vim.fs.root(fname, root_markers)
-      end
-
       -- Configure kotlin_lsp
       opts.servers.kotlin_lsp = {
         cmd = vim.list_extend(vim.deepcopy(kotlin_lsp_cmd), {
@@ -116,16 +89,15 @@ return {
         }),
         mason = false,
         filetypes = { "kotlin" },
-        root_dir = kotlin_lsp_root_dir,
-        -- Prevent attaching to zipfile:// buffers (backup)
-        on_attach = function(client, bufnr)
-          local bufname = vim.api.nvim_buf_get_name(bufnr)
-          if bufname:match("^zipfile://") then
-            vim.schedule(function()
-              pcall(vim.lsp.buf_detach_client, bufnr, client.id)
-            end)
-          end
-        end,
+        root_markers = {
+          "workspace.json",
+          "settings.gradle",
+          "settings.gradle.kts",
+          "build.gradle",
+          "build.gradle.kts",
+          "pom.xml",
+          ".git",
+        },
       }
 
       -- jdtls is now managed by nvim-jdtls via ftplugin/java.lua
