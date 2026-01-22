@@ -181,6 +181,25 @@ local function validate_project(project_root)
   return false, "No build files found (Gradle/Maven) in " .. project_root
 end
 
+---Show a notification (uses fidget.nvim or snacks.nvim if available, else vim.notify)
+---@param msg string
+---@param level number|nil vim.log.levels
+---@param opts table|nil
+local function notify(msg, level, opts)
+  opts = opts or {}
+  opts.title = opts.title or "Kotlin Android LSP"
+
+  -- Try snacks.nvim first (LazyVim default)
+  local ok_snacks, snacks = pcall(require, "snacks")
+  if ok_snacks and snacks.notify then
+    snacks.notify(msg, { level = level, title = opts.title })
+    return
+  end
+
+  -- Fallback to vim.notify
+  vim.notify(msg, level, opts)
+end
+
 ---Generate workspace.json for a project
 ---@param project_root string|nil Project root directory (default: cwd)
 ---@param module string|nil Gradle module name (default: from config)
@@ -191,7 +210,7 @@ function M.generate(project_root, module)
   -- Validate project
   local valid, err = validate_project(project_root)
   if not valid then
-    vim.notify(err, vim.log.levels.ERROR, { title = "Kotlin Android LSP" })
+    notify(err, vim.log.levels.ERROR)
     return
   end
 
@@ -207,26 +226,12 @@ function M.generate(project_root, module)
     unknown = "Unknown",
   }
 
-  vim.notify(
-    string.format(
-      "Generating workspace for %s project: %s (module: %s)",
-      type_display[project_info.type] or "Unknown",
-      project_root,
-      module
-    ),
-    vim.log.levels.INFO,
-    { title = "Kotlin Android LSP" }
+  -- Show loading notification
+  local project_name = vim.fn.fnamemodify(project_root, ":t")
+  notify(
+    string.format("Generating workspace.json for %s (%s)...", project_name, type_display[project_info.type] or "Unknown"),
+    vim.log.levels.INFO
   )
-
-  if project_info.compile_sdk then
-    vim.notify("  compileSdk: " .. project_info.compile_sdk, vim.log.levels.DEBUG)
-  end
-  if project_info.kotlin_version then
-    vim.notify("  Kotlin: " .. project_info.kotlin_version, vim.log.levels.DEBUG)
-  end
-  if project_info.java_version then
-    vim.notify("  Java: " .. project_info.java_version, vim.log.levels.DEBUG)
-  end
 
   -- Run the generator script
   local script = get_script_path()
@@ -237,21 +242,24 @@ function M.generate(project_root, module)
     vim.fn.shellescape(module)
   )
 
+  local start_time = vim.loop.now()
+
   vim.fn.jobstart(cmd, {
     on_exit = function(_, exit_code)
       vim.schedule(function()
+        local elapsed = vim.loop.now() - start_time
+        local elapsed_str = string.format("%.1fs", elapsed / 1000)
+
         if exit_code == 0 then
-          vim.notify(
-            string.format("Generated workspace.json in %s", project_root),
-            vim.log.levels.INFO,
-            { title = "Kotlin Android LSP" }
+          notify(
+            string.format("Workspace generated for %s (%s)", project_name, elapsed_str),
+            vim.log.levels.INFO
           )
           M.prompt_restart_lsp()
         else
-          vim.notify(
-            string.format("Failed to generate workspace.json (exit code: %d)", exit_code),
-            vim.log.levels.ERROR,
-            { title = "Kotlin Android LSP" }
+          notify(
+            string.format("Failed to generate workspace (exit code: %d)", exit_code),
+            vim.log.levels.ERROR
           )
         end
       end)
@@ -261,7 +269,7 @@ function M.generate(project_root, module)
         for _, line in ipairs(data) do
           if line ~= "" then
             vim.schedule(function()
-              vim.notify(line, vim.log.levels.WARN, { title = "Kotlin Android LSP" })
+              notify(line, vim.log.levels.WARN)
             end)
           end
         end
