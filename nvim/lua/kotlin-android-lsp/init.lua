@@ -7,6 +7,7 @@ M.config = require("kotlin-android-lsp.config")
 M.uri = require("kotlin-android-lsp.uri")
 M.workspace = require("kotlin-android-lsp.workspace")
 M.attach = require("kotlin-android-lsp.attach")
+M.handlers = require("kotlin-android-lsp.handlers")
 
 ---Setup the plugin with user options
 ---@param opts table|nil User configuration options
@@ -14,6 +15,7 @@ function M.setup(opts)
   M.config.setup(opts)
   M.uri.setup()
   M.attach.setup()
+  M.handlers.setup()
 
   -- Register user commands
   vim.api.nvim_create_user_command("KotlinWorkspaceGenerate", function(cmd_opts)

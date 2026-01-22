@@ -90,6 +90,14 @@ function M.setup()
     if type(uri) == "string" and uri:sub(1, 4) == "jar:" then
       return jar_to_zipfile(uri)
     end
+    -- Handle jdt:// URIs by converting to zipfile:// if source jar available
+    if type(uri) == "string" and uri:sub(1, 6) == "jdt://" then
+      local zipfile = M.jdt_to_zipfile(uri)
+      if zipfile then
+        return zipfile
+      end
+      -- Fall through to let nvim-jdtls handle it via BufReadCmd
+    end
     return orig_uri_to_fname(uri)
   end
 end
@@ -106,6 +114,91 @@ end
 ---@return boolean
 function M.is_jar(uri)
   return type(uri) == "string" and uri:sub(1, 4) == "jar:"
+end
+
+---Check if a URI is a jdt URI
+---@param uri string The URI
+---@return boolean
+function M.is_jdt(uri)
+  return type(uri) == "string" and uri:sub(1, 6) == "jdt://"
+end
+
+---Find source jar for a class jar in gradle cache
+---@param class_jar_name string The class jar filename (e.g., "monitor-1.6.1.jar")
+---@return string|nil The full path to the source jar
+local function find_source_jar(class_jar_name)
+  -- Remove .jar extension and add -sources.jar
+  local base_name = class_jar_name:gsub("%.jar$", "")
+  local source_jar_name = base_name .. "-sources.jar"
+
+  local gradle_cache = (vim.env.HOME or "") .. "/.gradle/caches/modules-2/files-2.1"
+  if vim.fn.isdirectory(gradle_cache) ~= 1 then
+    return nil
+  end
+
+  -- Search for the source jar in gradle cache
+  local handle = io.popen('find "' .. gradle_cache .. '" -name "' .. source_jar_name .. '" 2>/dev/null | head -1')
+  if handle then
+    local result = handle:read("*l")
+    handle:close()
+    if result and result ~= "" then
+      return result
+    end
+  end
+
+  return nil
+end
+
+---Convert jdt:// URI to zipfile:// path if source jar available
+---Format: jdt://contents/artifact.jar/com.example/ClassName.class?...
+---@param uri string The jdt:// URI
+---@return string|nil The zipfile:// path, or nil if no source found
+function M.jdt_to_zipfile(uri)
+  if not M.is_jdt(uri) then
+    return nil
+  end
+
+  -- Parse jdt:// URI
+  -- Example: jdt://contents/monitor-1.6.1.jar/androidx.test.platform.app/InstrumentationRegistry.class?...
+  local jar_name, package_path, class_name = uri:match("jdt://contents/([^/]+)/([^?]+)/([^?%.]+)%.class")
+
+  if not jar_name or not class_name then
+    -- Try alternate format without package
+    jar_name, class_name = uri:match("jdt://contents/([^/]+)/([^?%.]+)%.class")
+    package_path = ""
+  end
+
+  if not jar_name then
+    return nil
+  end
+
+  -- Find corresponding source jar
+  local source_jar = find_source_jar(jar_name)
+  if not source_jar then
+    return nil
+  end
+
+  -- Build the inner path (convert package.name to package/name)
+  local inner_path
+  if package_path and package_path ~= "" then
+    inner_path = package_path:gsub("%.", "/") .. "/" .. class_name .. ".java"
+  else
+    inner_path = class_name .. ".java"
+  end
+
+  -- Construct zipfile:// URI
+  return "zipfile://" .. source_jar .. "::" .. inner_path
+end
+
+---Convert jdt:// URI to jar: URI (for LSP communication)
+---@param uri string The jdt:// URI
+---@return string|nil The jar: URI
+function M.jdt_to_jar(uri)
+  local zipfile = M.jdt_to_zipfile(uri)
+  if zipfile then
+    return zipfile_to_jar(zipfile)
+  end
+  return nil
 end
 
 return M
