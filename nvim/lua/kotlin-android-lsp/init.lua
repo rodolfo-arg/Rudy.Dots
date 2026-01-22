@@ -57,15 +57,17 @@ function M.setup(opts)
   })
 
   vim.api.nvim_create_user_command("KotlinIndexSources", function()
-    vim.notify("Indexing JDK and Android SDK sources...", vim.log.levels.INFO)
+    vim.notify("Indexing sources (JDK, Android SDK, Gradle)...", vim.log.levels.INFO)
     local jdk_ok = M.indexer.index_jdk()
     local android_ok = M.indexer.index_android_sdk()
-    vim.notify(string.format("Indexing complete. JDK: %s, Android SDK: %s",
+    local gradle_count = M.indexer.index_gradle_sources()
+    vim.notify(string.format("Indexing complete:\n- JDK: %s\n- Android SDK: %s\n- Gradle jars: %d",
       jdk_ok and "OK" or "NOT FOUND",
-      android_ok and "OK" or "NOT FOUND"
+      android_ok and "OK" or "NOT FOUND",
+      gradle_count
     ), vim.log.levels.INFO)
   end, {
-    desc = "Index JDK and Android SDK sources",
+    desc = "Index JDK, Android SDK, and Gradle sources",
   })
 
   vim.api.nvim_create_user_command("KotlinLookup", function(cmd_opts)

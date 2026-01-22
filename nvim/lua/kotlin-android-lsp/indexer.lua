@@ -323,10 +323,35 @@ function M.index_android_sdk()
   return count > 0
 end
 
----Index common sources (JDK, Android SDK)
+---Index all gradle source jars
+---@return number count of jars indexed
+function M.index_gradle_sources()
+  local gradle_cache = (vim.env.HOME or "") .. "/.gradle/caches/modules-2/files-2.1"
+  if vim.fn.isdirectory(gradle_cache) ~= 1 then
+    return 0
+  end
+
+  local handle = io.popen('find "' .. gradle_cache .. '" -name "*-sources.jar" 2>/dev/null')
+  if not handle then return 0 end
+
+  local count = 0
+  for jar_path in handle:lines() do
+    -- Skip already indexed jars
+    if not jar_indexes[jar_path] then
+      M.index_jar(jar_path)
+      count = count + 1
+    end
+  end
+  handle:close()
+
+  return count
+end
+
+---Index common sources (JDK, Android SDK, Gradle)
 function M.index_common_sources()
   M.index_jdk()
   M.index_android_sdk()
+  M.index_gradle_sources()
 end
 
 ---Clear all caches
