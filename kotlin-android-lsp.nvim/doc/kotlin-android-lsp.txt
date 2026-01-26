@@ -1,0 +1,121 @@
+*kotlin-android-lsp.txt*  Enhanced Kotlin/Android LSP for Neovim
+
+Author:   Rodolfo
+License:  MIT
+
+CONTENTS                                        *kotlin-android-lsp-contents*
+
+1. Introduction ........................ |kotlin-android-lsp-introduction|
+2. Requirements ........................ |kotlin-android-lsp-requirements|
+3. Installation ........................ |kotlin-android-lsp-installation|
+4. Configuration ....................... |kotlin-android-lsp-configuration|
+5. Commands ............................ |kotlin-android-lsp-commands|
+6. Keymaps ............................. |kotlin-android-lsp-keymaps|
+7. Functions ........................... |kotlin-android-lsp-functions|
+
+==============================================================================
+1. INTRODUCTION                              *kotlin-android-lsp-introduction*
+
+kotlin-android-lsp.nvim provides enhanced Kotlin/Android/Java LSP support
+with custom navigation for dependency sources.
+
+Features:
+- Auto-build on open (runs assembleDebug when needed)
+- Workspace generation for kotlin-lsp
+- Custom gd/gr/K for JAR source files
+- Lazy source indexing with disk cache
+- Generated sources support (Data Binding, R class)
+
+==============================================================================
+2. REQUIREMENTS                              *kotlin-android-lsp-requirements*
+
+Required:
+- Neovim 0.10+
+- Java 21+
+- kotlin-lsp (JetBrains Kotlin LSP)
+- Python 3
+- Treesitter parsers: kotlin, java, groovy
+
+Optional:
+- jdtls (for Java files)
+- Android SDK with sources
+
+==============================================================================
+3. INSTALLATION                              *kotlin-android-lsp-installation*
+
+Using lazy.nvim: >lua
+  {
+    "yourusername/kotlin-android-lsp.nvim",
+    dependencies = {
+      "neovim/nvim-lspconfig",
+      "nvim-treesitter/nvim-treesitter",
+    },
+    ft = { "kotlin", "java" },
+    config = function()
+      require("kotlin-android-lsp").setup()
+    end,
+  }
+<
+
+==============================================================================
+4. CONFIGURATION                            *kotlin-android-lsp-configuration*
+
+Call setup() with options: >lua
+  require("kotlin-android-lsp").setup({
+    default_module = "app",
+    keymaps = {
+      enabled = true,
+      generate_workspace = "<leader>dk",
+      workspace_info = "<leader>di",
+    },
+    android = {
+      sdk_root = vim.env.ANDROID_SDK_ROOT,
+    },
+  })
+<
+
+==============================================================================
+5. COMMANDS                                      *kotlin-android-lsp-commands*
+
+*:KotlinWorkspaceGenerate*    Generate workspace.json for current project
+*:KotlinWorkspaceInfo*        Show project info in floating window
+*:KotlinAssembleDebug*        Run ./gradlew assembleDebug
+*:KotlinRefresh*              Rebuild + regenerate workspace + restart LSP
+*:KotlinIndexSources*         Manually trigger source indexing
+*:KotlinStatus*               Show indexing status
+*:KotlinLookup* {fqn}         Lookup FQN in index
+*:KotlinShowImports*          Show parsed imports for current buffer
+*:KotlinClearCache*           Clear index cache
+
+==============================================================================
+6. KEYMAPS                                        *kotlin-android-lsp-keymaps*
+
+Default keymaps (when keymaps.enabled = true):
+
+  <leader>dk    Generate workspace
+  <leader>di    Show workspace info
+  <leader>da    Run assembleDebug
+
+For zipfile:// buffers (dependency sources):
+
+  gd            Custom go-to-definition
+  gr            Custom find references
+  K             Show symbol info
+
+==============================================================================
+7. FUNCTIONS                                    *kotlin-android-lsp-functions*
+
+                                              *kotlin-android-lsp.setup()*
+setup({opts})
+    Initialize the plugin with configuration options.
+
+                                              *kotlin-android-lsp.refresh()*
+refresh()
+    Rebuild project, regenerate workspace, and restart LSP.
+
+                                      *kotlin-android-lsp.assemble_debug()*
+assemble_debug()
+    Run ./gradlew assembleDebug.
+
+==============================================================================
+vim:tw=78:ts=8:ft=help:norl:

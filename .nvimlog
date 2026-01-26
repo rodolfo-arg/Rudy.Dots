@@ -1,0 +1,5 @@
+WRN 2026-01-21T15:01:45.500 c/nvim.90314.0 server_start:193: Failed to start server: operation not permitted: /var/folders/53/pn7hckdd7752wyc7dxc_3l2h0000gn/T/nvim.rodolfo/JKVvEW/nvim.91279.0
+WRN 2026-01-21T15:02:05.981 c/nvim.90314.0 server_start:193: Failed to start server: operation not permitted: /var/folders/53/pn7hckdd7752wyc7dxc_3l2h0000gn/T/nvim.rodolfo/2bIG0V/nvim.91330.0
+WRN 2026-01-22T11:23:07.425 ?.75749    server_start:193: Failed to start server: operation not permitted: /var/folders/53/pn7hckdd7752wyc7dxc_3l2h0000gn/T/nvim.rodolfo/IRreid/nvim.75749.0
+WRN 2026-01-22T11:23:22.071 ?.75853    server_start:193: Failed to start server: operation not permitted: /var/folders/53/pn7hckdd7752wyc7dxc_3l2h0000gn/T/nvim.rodolfo/GDgjxC/nvim.75853.0
+WRN 2026-01-22T11:24:53.223 ?.76274    server_start:193: Failed to start server: operation not permitted: /var/folders/53/pn7hckdd7752wyc7dxc_3l2h0000gn/T/nvim.rodolfo/ZOuKYl/nvim.76274.0
